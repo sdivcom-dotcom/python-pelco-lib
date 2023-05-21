@@ -5,8 +5,8 @@ Applies to all functions!
 For correct working it is required to pass the address of each camera in format "00" where zeros are numbers of camera address on the bus.
 til_speed is tilt speed and should be 00 to 63. It is desirable to pass the number as int.
 pan_speed is the speed on the left or right rotation axis and it should be from 00 to 63. Preferably pass the number as int.
-
 Below are the functions for the PELCO-P protocol. commands_pelco_p.py file
+Below are the functions for the PELCO-D protocol. commands_pelco_d.py file
 1. pelco_p_stop(address) - stops camera movement.
 2. pelco_p_tilt_up(address, til_speed) - upward camera movement.
 3. pelco_p_tilt_down(address, til_speed) - downward camera movement.
@@ -26,8 +26,6 @@ If you pass left = 1, the camera will move to the left.
 13. pelco_p_zoom_out(address) - Lens zoom moves backwards.
 14. pelco_p_focus_far(address) - lens focus moves forward.
 15. pelco_p_focus_near(address) - the lens focus moves backwards.
-
-Below are the functions for the PELCO-D protocol. commands_pelco_d.py file
 16. pelco_d_stop(address) - stops camera movement.
 17. pelco_d_tilt_up(address, til_speed) - camera motion up.
 18. pelco_d_tilt_down(address, til_speed) - camera movement down.
