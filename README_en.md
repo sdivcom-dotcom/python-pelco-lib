@@ -1,5 +1,5 @@
-# python-pelco-lib
-Library for working with devices supporting PELCO-D and PELCO-P. 
+## python-pelco-lib
+# Library for working with devices supporting PELCO-D and PELCO-P. 
 Here is my small library for easy work with the PELCO-P and PELCO-D protocol. I will describe its main functions:
 Applies to all functions!
 For correct working it is required to pass the address of each camera in format "00" where zeros are numbers of camera address on the bus.
@@ -56,11 +56,10 @@ data_stop is where we send the string that the stop command generated. Here is a
 delay - The delay between the commands in seconds.
 31. write_com_command(port, baud, data, data_stop, delay) sends the command and wait for the set time interval and send the stop command. This is useful for small steps in a movement.
 32. write_com_action(port, baud, data) simply sends data.
-
 A standard example of working with the library looks like this. 
-#We add what we need to our program file. 
+We add what we need to our program file. 
+```
 from commands_pelco_d import pelco_d_stop, pelco_d_tilt_up
-#and add the transport module
 from pelco_transport import write_com_action, write_com_command
 port = "/dev/ttyUSB1"
 baud = "2400"
@@ -70,5 +69,5 @@ til_speed = "32"
 data = pelco_d_tilt_up(address, til_speed)
 data_stop = pelco_d_stop(address)
 write_com_command(port, baud, data, data_stop, delay)
-
+```
 Here we have a code which sends via COM port available at address "/dev/ttyUSB1" with baudrate 2400 a command via PELCO-D protocol to raise the lens up one second and stop the camera at address "01".
