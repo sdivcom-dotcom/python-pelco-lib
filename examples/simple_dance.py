@@ -1,137 +1,81 @@
-#LEFT-RIGHT-UP-DOWN-ZOOM PLUS-MINUS
-from commands_pelco_d import pelco_d_stop, pelco_d_tilt_up
-from commands_pelco_d import pelco_d_tilt_down, pelco_d_pan_left
-from commands_pelco_d import pelco_d_pan_right, pelco_d_zoom_in
-from commands_pelco_d import pelco_d_zoom_out, pelco_d_focus_far 
-from commands_pelco_d import pelco_d_focus_near
-from commands_pelco_p import pelco_p_stop, pelco_p_tilt_up
-from commands_pelco_p import pelco_p_tilt_down, pelco_p_pan_left
-from commands_pelco_p import pelco_p_pan_right, pelco_p_zoom_in
-from commands_pelco_p import pelco_p_zoom_out, pelco_p_focus_far 
-from commands_pelco_p import pelco_p_focus_near
-from pelco_transport import write_com_action, write_com_command
+"""Interactive prompt that drives one camera, plus an "all" sweep.
 
-print("Enter the command:")
-command = input()
-port = "/dev/ttyUSB1"
-baud = "2400"
-address = "01"
-protocol = "p"
-delay_optics = 0.05
-delay_runs = 1
-til_speed = "32"
-pan_speed = "32"
+Type one of the listed commands at the prompt. "all" walks the camera up,
+down, left and right in turn, which is a quick way to check the wiring.
+"""
 
+import os
+import sys
 
-if command == "up":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_tilt_up(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_tilt_up(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
+# Let the example run straight from a checkout, without installing the library.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import python_pelco_lib as pelco  # noqa: E402
 
-elif command == "down":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_tilt_down(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_tilt_down(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
+PORT = "/dev/ttyUSB0"
+BAUD = 2400
+ADDRESS = "01"
+PROTOCOL = "d"
+DELAY_OPTICS = 0.05
+DELAY_RUNS = 10
+TIL_SPEED = 63
+PAN_SPEED = 63
 
-elif command == "right":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_pan_right(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_pan_right(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
+MOVE_COMMANDS = {
+    "up": "tilt_up",
+    "down": "tilt_down",
+    "left": "pan_left",
+    "right": "pan_right",
+}
 
-elif command == "left":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_pan_left(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_pan_left(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
+OPTIC_COMMANDS = {
+    "zoom_plus": "zoom_in",
+    "zoom_minus": "zoom_out",
+    "focus_plus": "focus_far",
+    "focus_minus": "focus_near",
+}
 
-elif command == "zoom_plus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_zoom_in(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_zoom_in(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
+TILT_COMMANDS = ("up", "down")
+DANCE = ("up", "down", "left", "right")
 
 
-elif command == "zoom_minus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_zoom_out(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_zoom_out(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
+def build(name, speed=None):
+    """Look up ``pelco_<PROTOCOL>_<name>`` and call it."""
+    builder = getattr(pelco, "pelco_%s_%s" % (PROTOCOL, name))
+    if speed is None:
+        return builder(ADDRESS)
+    return builder(ADDRESS, speed)
 
 
-elif command == "focus_plus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_focus_far(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_focus_far(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
+def move(link, command):
+    """Run one pan/tilt step and stop again."""
+    speed = TIL_SPEED if command in TILT_COMMANDS else PAN_SPEED
+    link.send_for(build(MOVE_COMMANDS[command], speed), build("stop"), DELAY_RUNS)
 
 
-elif command == "focus_minus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_focus_near(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_focus_near(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
+def main():
+    print("Enter the command (%s, all):"
+          % ", ".join(sorted(list(MOVE_COMMANDS) + list(OPTIC_COMMANDS) + ["stop"])))
+    command = input().strip()
 
-elif command == "stop":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        write_com_action(port, baud, stop)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        write_com_action(port, baud, stop)
-    else:
-        pass
+    # One open port for the whole session, so the "all" sweep does not
+    # re-open the adapter between every step.
+    with pelco.PelcoSerial(PORT, BAUD) as link:
+        if command == "stop":
+            link.send(build("stop"))
+        elif command in MOVE_COMMANDS:
+            move(link, command)
+        elif command in OPTIC_COMMANDS:
+            link.send_for(build(OPTIC_COMMANDS[command]), build("stop"), DELAY_OPTICS)
+        elif command == "all":
+            for step in DANCE:
+                print(step)
+                move(link, step)
+        else:
+            print("Not command")
+            return 1
+    return 0
 
-else:
-    print("Not command")
+
+if __name__ == '__main__':
+    sys.exit(main())

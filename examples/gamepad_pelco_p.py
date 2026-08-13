@@ -1,51 +1,104 @@
-import hid
+"""Drive a Pelco-P camera from a USB gamepad.
+
+The camera moves while the stick is held and stops when it returns to centre,
+so there is no fixed step delay. The port is opened once for the whole session
+instead of once per command.
+
+Set VENDOR_ID/PRODUCT_ID to your own pad - the ids of every connected HID
+device are printed at startup.
+"""
+
+import os
+import sys
 import time
 
-from commands_pelco_p import pelco_p_stop, pelco_p_tilt_up
-from commands_pelco_p import pelco_p_tilt_down, pelco_p_pan_left
-from commands_pelco_p import pelco_p_pan_right, pelco_p_zoom_in
-from commands_pelco_p import pelco_p_zoom_out, pelco_p_focus_far 
-from commands_pelco_p import pelco_p_focus_near
-from pelco_transport import write_com_action, write_com_command
+import hid
 
-port = "/dev/ttyUSB0"
-baud = "2400"
-address = "01"
-protocol = "p"
-delay_runs = 1
-til_speed = "32"
-pan_speed = "32"
+# Let the example run straight from a checkout, without installing the library.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#0x0079:0x0011
-for device in hid.enumerate():
-    print(f"0x{device['vendor_id']:04x}:0x{device['product_id']:04x} {device['product_string']}")
+import python_pelco_lib as pelco  # noqa: E402
 
-gamepad = hid.device()
-gamepad.open(0x0079, 0x0011)
-gamepad.set_nonblocking(True)
-while True:
-    report = gamepad.read(16)
-    if report:
-        #print(report)
-        if report[3] == 0:
-            print("left")
-            stop = pelco_p_stop(address)
-            data = pelco_p_pan_left(address, pan_speed)
-            write_com_command(port, baud, data, stop, delay_runs)
-        elif report[3] == 255:
-            print("right")
-            stop = pelco_p_stop(address)
-            data = pelco_p_pan_right(address, pan_speed)
-            write_com_command(port, baud, data, stop, delay_runs)
-        elif report[4] == 0:
-            print("up")
-            stop = pelco_p_stop(address)
-            data = pelco_p_tilt_up(address, til_speed)
-            write_com_command(port, baud, data, stop, delay_runs)
-        elif report[4] == 255:
-            print("down")
-            stop = pelco_p_stop(address)
-            data = pelco_p_tilt_down(address, til_speed)
-            write_com_command(port, baud, data, stop, delay_runs)
-        else:
-            pass
+PORT = "/dev/ttyUSB0"
+BAUD = 2400
+ADDRESS = "01"
+TIL_SPEED = 32
+PAN_SPEED = 32
+
+VENDOR_ID = 0x0079
+PRODUCT_ID = 0x0011
+
+# Byte offsets of the two stick axes in the HID report, and the values they
+# report at each extreme. Centre is somewhere in between.
+AXIS_X = 3
+AXIS_Y = 4
+AXIS_MIN = 0
+AXIS_MAX = 255
+
+POLL_INTERVAL = 0.01
+
+
+def direction(report):
+    """Return the direction the stick is pushed, or None when centred."""
+    if report[AXIS_X] == AXIS_MIN:
+        return "left"
+    if report[AXIS_X] == AXIS_MAX:
+        return "right"
+    if report[AXIS_Y] == AXIS_MIN:
+        return "up"
+    if report[AXIS_Y] == AXIS_MAX:
+        return "down"
+    return None
+
+
+def command_for(name):
+    """Build the Pelco-P message for a direction."""
+    if name == "left":
+        return pelco.pelco_p_pan_left(ADDRESS, PAN_SPEED)
+    if name == "right":
+        return pelco.pelco_p_pan_right(ADDRESS, PAN_SPEED)
+    if name == "up":
+        return pelco.pelco_p_tilt_up(ADDRESS, TIL_SPEED)
+    if name == "down":
+        return pelco.pelco_p_tilt_down(ADDRESS, TIL_SPEED)
+    return pelco.pelco_p_stop(ADDRESS)
+
+
+def main():
+    for device in hid.enumerate():
+        print("0x%04x:0x%04x %s"
+              % (device['vendor_id'], device['product_id'], device['product_string']))
+
+    gamepad = hid.device()
+    gamepad.open(VENDOR_ID, PRODUCT_ID)
+    gamepad.set_nonblocking(True)
+
+    stop = pelco.pelco_p_stop(ADDRESS)
+    current = None
+
+    try:
+        with pelco.PelcoSerial(PORT, BAUD) as link:
+            while True:
+                report = gamepad.read(16)
+                if not report:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+
+                wanted = direction(report)
+                if wanted == current:
+                    continue
+
+                print(wanted or "stop")
+                link.send(command_for(wanted) if wanted else stop)
+                current = wanted
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Never leave the camera moving on the way out.
+        pelco.write_com_action(PORT, BAUD, stop)
+        gamepad.close()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

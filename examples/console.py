@@ -1,195 +1,90 @@
+"""Send a single Pelco command from the command line.
+
+    python console.py -p /dev/ttyUSB0 -b 2400 -a 01 -pr d -c right
+"""
+
 import argparse
-from commands_pelco_d import pelco_d_stop, pelco_d_tilt_up
-from commands_pelco_d import pelco_d_tilt_down, pelco_d_pan_left
-from commands_pelco_d import pelco_d_pan_right, pelco_d_zoom_in
-from commands_pelco_d import pelco_d_zoom_out, pelco_d_focus_far 
-from commands_pelco_d import pelco_d_focus_near
-from commands_pelco_p import pelco_p_stop, pelco_p_tilt_up
-from commands_pelco_p import pelco_p_tilt_down, pelco_p_pan_left
-from commands_pelco_p import pelco_p_pan_right, pelco_p_zoom_in
-from commands_pelco_p import pelco_p_zoom_out, pelco_p_focus_far 
-from commands_pelco_p import pelco_p_focus_near
-from pelco_transport import write_com_action, write_com_command
+import os
+import sys
 
-parser = argparse.ArgumentParser(description="Simple console for PELCO")
+# Let the example run straight from a checkout, without installing the library.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-parser.add_argument('-p', '--port',
-                    dest='port',
-                    help='Port CH341a',
-                    default='/dev/ttyUSB1',
-                    type=str)
+import python_pelco_lib as pelco  # noqa: E402
 
-parser.add_argument('-b', '--baud',
-                    dest='baud',
-                    help='baud rate camera',
-                    default=2400,
-                    type=int)
+# Command name on the command line -> builder suffix in the library.
+MOVE_COMMANDS = {
+    "up": "tilt_up",
+    "down": "tilt_down",
+    "left": "pan_left",
+    "right": "pan_right",
+}
 
-parser.add_argument('-a', '--address',
-                    dest='address',
-                    help='address camera',
-                    default='01',
-                    type=str)
+OPTIC_COMMANDS = {
+    "zoom_plus": "zoom_in",
+    "zoom_minus": "zoom_out",
+    "focus_plus": "focus_far",
+    "focus_minus": "focus_near",
+}
 
-parser.add_argument('-pr', '--protocol',
-                    dest='protocol',
-                    help='protocol camera',
-                    default="p",
-                    type=str)
+TILT_COMMANDS = ("up", "down")
 
-parser.add_argument('-c', '--command',
-                    dest='command',
-                    help='command camera',
-                    default='stop',
-                    type=str) 
- 
-parser.add_argument('-do', '--delay_optics',
-                    dest='delay_optics',
-                    help='delay commands optics',
-                    default=0.05,
-                    type=float) 
 
-parser.add_argument('-dr', '--delay_runs',
-                    dest='delay_runs',
-                    help='delay commands tilt and pan',
-                    default=0.37,
-                    type=float) 
+def build(protocol, name, address, speed=None):
+    """Look up ``pelco_<protocol>_<name>`` and call it."""
+    builder = getattr(pelco, "pelco_%s_%s" % (protocol, name))
+    if speed is None:
+        return builder(address)
+    return builder(address, speed)
 
-parser.add_argument('-ts', '--dr',
-                    dest='til_speed',
-                    help='tilt speed set 0-64',
-                    default='32',
-                    type=str) 
 
-parser.add_argument('-ps', '--pan_speed',
-                    dest='pan_speed',
-                    help='pan_speed set 0-64',
-                    default='32',
-                    type=str) 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Simple console for PELCO")
+    parser.add_argument('-p', '--port', dest='port', type=str,
+                        default='/dev/ttyUSB0',
+                        help='serial port of the USB-RS485 adapter')
+    parser.add_argument('-b', '--baud', dest='baud', type=int,
+                        default=pelco.DEFAULT_BAUDRATE,
+                        help='baud rate configured on the camera')
+    parser.add_argument('-a', '--address', dest='address', type=str,
+                        default='01', help='camera address on the bus, in hex')
+    parser.add_argument('-pr', '--protocol', dest='protocol', type=str,
+                        default='d', choices=('d', 'p'),
+                        help='pelco protocol variant')
+    parser.add_argument('-c', '--command', dest='command', type=str,
+                        default='right',
+                        choices=sorted(list(MOVE_COMMANDS) + list(OPTIC_COMMANDS) + ['stop']),
+                        help='command to send')
+    parser.add_argument('-do', '--delay_optics', dest='delay_optics', type=float,
+                        default=0.05, help='how long to hold a zoom/focus command')
+    parser.add_argument('-dr', '--delay_runs', dest='delay_runs', type=float,
+                        default=0.37, help='how long to hold a pan/tilt command')
+    parser.add_argument('-ts', '--til_speed', dest='til_speed', type=int,
+                        default=32, help='tilt speed, 0-63')
+    parser.add_argument('-ps', '--pan_speed', dest='pan_speed', type=int,
+                        default=32, help='pan speed, 0-63')
+    return parser.parse_args()
 
-args = parser.parse_args()
-command = args.command
-port = args.port
-baud = args.baud
-address = args.address
-protocol = args.protocol
-delay_optics = args.delay_optics
-delay_runs = args.delay_runs
-til_speed = args.til_speed
-pan_speed = args.pan_speed
 
-if command == "up":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_tilt_up(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_tilt_up(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
+def main():
+    args = parse_args()
+    stop = build(args.protocol, "stop", args.address)
+
+    if args.command == "stop":
+        pelco.write_com_action(args.port, args.baud, stop)
+        return 0
+
+    if args.command in MOVE_COMMANDS:
+        speed = args.til_speed if args.command in TILT_COMMANDS else args.pan_speed
+        data = build(args.protocol, MOVE_COMMANDS[args.command], args.address, speed)
+        delay = args.delay_runs
     else:
-        pass
+        data = build(args.protocol, OPTIC_COMMANDS[args.command], args.address)
+        delay = args.delay_optics
+
+    pelco.write_com_command(args.port, args.baud, data, stop, delay)
+    return 0
 
 
-elif command == "down":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_tilt_down(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_tilt_down(address, til_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
-
-elif command == "right":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_pan_right(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_pan_right(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
-
-elif command == "left":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_pan_left(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_pan_left(address, pan_speed)
-        write_com_command(port, baud, data, stop, delay_runs)
-    else:
-        pass
-
-elif command == "zoom_plus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_zoom_in(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_zoom_in(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
-
-
-elif command == "zoom_minus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_zoom_out(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_zoom_out(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
-
-
-elif command == "focus_plus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_focus_far(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_focus_far(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
-
-
-elif command == "focus_minus":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        data = pelco_d_focus_near(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        data = pelco_p_focus_near(address)
-        write_com_command(port, baud, data, stop, delay_optics)
-    else:
-        pass
-
-elif command == "stop":
-    if protocol == "d":
-        stop = pelco_d_stop(address)
-        write_com_action(port, baud, stop)
-    elif protocol == "p":
-        stop = pelco_p_stop(address)
-        write_com_action(port, baud, stop)
-    else:
-        pass
-
-else:
-    print("Not command")
-
-
-
+if __name__ == '__main__':
+    sys.exit(main())
